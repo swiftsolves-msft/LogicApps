@@ -1,0 +1,15 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: azure-vote-front
+spec:
+  containers:
+    - name: azure-vote-front
+      image: microsoft/azure-vote-front:v1
+      volumeMounts:
+      - mountPath: "/mnt/Azure"
+        name: volume
+  volumes:
+    - name: volume
+      persistentVolumeClaim:
+        claimName: azure-managed-disk

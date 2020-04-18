@@ -1,0 +1,467 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "metadata":{
+        "comments": "This playbook will take a Metric Alert for IOPs and update the corresponding UltraDisk to scale up the DiskIOPSReadWrite and DiskMBpsReadWrite by factor of x2",
+        "author": "Nathan Swift"
+    },
+    "parameters": {
+        "PlaybookName": {
+            "defaultValue": "Update-UltraDiskPerf",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('PlaybookName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "LogicAppsCategory": "metricalert"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "triggers": {
+                        "manual": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "properties": {
+                                                "context": {
+                                                    "properties": {
+                                                        "condition": {
+                                                            "properties": {
+                                                                "allOf": {
+                                                                    "items": {
+                                                                        "properties": {
+                                                                            "dimensions": {
+                                                                                "items": {
+                                                                                    "properties": {
+                                                                                        "name": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "value": {
+                                                                                            "type": "string"
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "name",
+                                                                                        "value"
+                                                                                    ],
+                                                                                    "type": "object"
+                                                                                },
+                                                                                "type": "array"
+                                                                            },
+                                                                            "metricName": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "metricNamespace": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "metricValue": {
+                                                                                "type": "number"
+                                                                            },
+                                                                            "operator": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "threshold": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "timeAggregation": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "webTestName": {}
+                                                                        },
+                                                                        "required": [
+                                                                            "metricName",
+                                                                            "metricNamespace",
+                                                                            "operator",
+                                                                            "threshold",
+                                                                            "timeAggregation",
+                                                                            "dimensions",
+                                                                            "metricValue",
+                                                                            "webTestName"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    "type": "array"
+                                                                },
+                                                                "windowSize": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "type": "object"
+                                                        },
+                                                        "conditionType": {
+                                                            "type": "string"
+                                                        },
+                                                        "description": {
+                                                            "type": "string"
+                                                        },
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "portalLink": {
+                                                            "type": "string"
+                                                        },
+                                                        "resourceGroupName": {
+                                                            "type": "string"
+                                                        },
+                                                        "resourceId": {
+                                                            "type": "string"
+                                                        },
+                                                        "resourceName": {
+                                                            "type": "string"
+                                                        },
+                                                        "resourceType": {
+                                                            "type": "string"
+                                                        },
+                                                        "severity": {
+                                                            "type": "string"
+                                                        },
+                                                        "subscriptionId": {
+                                                            "type": "string"
+                                                        },
+                                                        "timestamp": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "properties": {},
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "version": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "schemaId": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Filter_array": {
+                            "runAfter": {
+                                "Initialize_dataDisksArray": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@variables('dataDisksArray')",
+                                "where": "@equals(item()?['lun'], variables('LUN'))"
+                            }
+                        },
+                        "FindDisk": {
+                            "runAfter": {
+                                "Initialize_LUN": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "method": "GET",
+                                "uri": "https://management.azure.com/subscriptions/@{triggerBody()?['data']?['context']?['subscriptionId']}/resourceGroups/@{triggerBody()?['data']?['context']?['resourceGroupName']}/providers/Microsoft.Compute/virtualMachineScaleSets/@{triggerBody()?['data']?['context']?['resourceName']}/virtualmachines/@{variables('instanceID')}?api-version=2019-07-01"
+                            }
+                        },
+                        "GetDisk": {
+                            "runAfter": {
+                                "Initialize_ultraDiskName": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "method": "GET",
+                                "uri": "https://management.azure.com/subscriptions/@{triggerBody()?['data']?['context']?['subscriptionId']}/resourceGroups/@{triggerBody()?['data']?['context']?['resourceGroupName']}/providers/Microsoft.Compute/virtualMachineScaleSets/@{triggerBody()?['data']?['context']?['resourceName']}/virtualmachines/@{variables('instanceID')}?api-version=2019-07-01"
+                            }
+                        },
+                        "Initialize_LUN": {
+                            "runAfter": {
+                                "Initialize_instanceID": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "LUN",
+                                        "type": "integer",
+                                        "value": "@int(triggerBody()?['data']?['context']?['condition']?['allOf'][0]?['dimensions'][1]?['value'])"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_dataDisksArray": {
+                            "runAfter": {
+                                "FindDisk": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "dataDisksArray",
+                                        "type": "array",
+                                        "value": "@body('FindDisk')?['properties']?['storageProfile']?['dataDisks']"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_instanceID": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "instanceID",
+                                        "type": "string",
+                                        "value": "@{split(triggerBody()?['data']?['context']?['condition']?['allOf'][0]?['dimensions'][2]?['value'], '_')[add(length(split(triggerBody()?['data']?['context']?['condition']?['allOf'][0]?['dimensions'][2]?['value'], '_')), -1)]}"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_newDiskIOPSReadWrite": {
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "newDiskIOPSReadWrite",
+                                        "type": "integer",
+                                        "value": "@mul(body('Parse_JSON')?['properties']?['diskIOPSReadWrite'], 2)"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_newDiskMBpsReadWrite": {
+                            "runAfter": {
+                                "Initialize_newDiskIOPSReadWrite": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "newDiskMBpsReadWrite",
+                                        "type": "integer",
+                                        "value": "@mul(body('Parse_JSON')?['properties']?['diskMBpsReadWrite'], 2)"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_ultraDiskName": {
+                            "runAfter": {
+                                "Filter_array": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "ultraDiskName",
+                                        "type": "string",
+                                        "value": "@{body('Filter_array')[0]?['name']}"
+                                    }
+                                ]
+                            }
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "GetDisk": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('GetDisk')",
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "location": {
+                                            "type": "string"
+                                        },
+                                        "managedBy": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "properties": {
+                                            "properties": {
+                                                "creationData": {
+                                                    "properties": {
+                                                        "createOption": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "diskIOPSReadOnly": {
+                                                    "type": "integer"
+                                                },
+                                                "diskIOPSReadWrite": {
+                                                    "type": "integer"
+                                                },
+                                                "diskMBpsReadOnly": {
+                                                    "type": "integer"
+                                                },
+                                                "diskMBpsReadWrite": {
+                                                    "type": "integer"
+                                                },
+                                                "diskSizeBytes": {
+                                                    "type": "integer"
+                                                },
+                                                "diskSizeGB": {
+                                                    "type": "integer"
+                                                },
+                                                "diskState": {
+                                                    "type": "string"
+                                                },
+                                                "encryption": {
+                                                    "properties": {
+                                                        "type": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "maxShares": {
+                                                    "type": "integer"
+                                                },
+                                                "provisioningState": {
+                                                    "type": "string"
+                                                },
+                                                "readOnly": {
+                                                    "type": "boolean"
+                                                },
+                                                "timeCreated": {
+                                                    "type": "string"
+                                                },
+                                                "uniqueId": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "sku": {
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "tier": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "tags": {
+                                            "properties": {
+                                                "created-by": {
+                                                    "type": "string"
+                                                },
+                                                "creationDate": {
+                                                    "type": "string"
+                                                },
+                                                "kubernetes.io-created-for-pv-name": {
+                                                    "type": "string"
+                                                },
+                                                "kubernetes.io-created-for-pvc-name": {
+                                                    "type": "string"
+                                                },
+                                                "kubernetes.io-created-for-pvc-namespace": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "zones": {
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "type": "array"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "UpdateDisk": {
+                            "runAfter": {
+                                "Initialize_newDiskMBpsReadWrite": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                    "id": "/subscriptions/@{triggerBody()?['data']?['context']?['subscriptionId']}/resourceGroups/@{triggerBody()?['data']?['context']?['resourceGroupName']}/providers/Microsoft.Compute/disks/@{variables('ultraDiskName')}",
+                                    "properties": {
+                                        "diskIOPSReadWrite": "@variables('newDiskIOPSReadWrite')",
+                                        "diskMBpsReadWrite": "@variables('newDiskMBpsReadWrite')",
+                                        "diskSizeGB": "@body('Parse_JSON')?['properties']?['diskSizeGB']"
+                                    },
+                                    "sku": {
+                                        "name": "UltraSSD_LRS"
+                                    }
+                                },
+                                "method": "PATCH",
+                                "uri": "https://management.azure.com/subscriptions/@{triggerBody()?['data']?['context']?['subscriptionId']}/resourceGroups/@{triggerBody()?['data']?['context']?['resourceGroupName']}/providers/Microsoft.Compute/disks/@{variables('ultraDiskName')}?api-version=2019-07-01"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {}
+            }
+        }
+    ]
+}
