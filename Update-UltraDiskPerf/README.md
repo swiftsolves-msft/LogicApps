@@ -3,7 +3,7 @@ author: Nathan Swift
 
 This Logic App will run recieve a Ultra Disk Related Metric Alert and Scale up Perf Configuration of the UltraDisk. Can be used to demo or investigate as a concept.
 
-<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure%2FAzure-Sentinel%2Fmaster%2FPlaybooks%2FUpdate-UltraDiskPerf%2Fazuredeploy.json" target="_blank">
+<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fswiftsolves-msft%2FLogicApps%2Fmaster%2FUpdate-UltraDiskPerf%2Fazuredeploy.json" target="_blank">
     <img src="https://aka.ms/deploytoazurebutton"/>
 </a>
 <a href="https://portal.azure.us/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fswiftsolves-msft%2FLogicApps%2Fmaster%2FUpdate-UltraDiskPerf%2Fazuredeploy.json" target="_blank">
