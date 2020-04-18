@@ -19,7 +19,7 @@ Assign RBAC 'Virtual Machine Contributor' role to the Logic App at the Demo Reso
 # Demo Notes
 
 ### Big thanks to Ned Bellavance's blog that helped demystify AKS and ultraDisk deployment steps
-<a href="https://nedinthecloud.com/author/nedbellavance/"</a>
+"https://nedinthecloud.com/author/nedbellavance/"
 
 ## Tested with a AKS cluster using UltraDisks.
 
