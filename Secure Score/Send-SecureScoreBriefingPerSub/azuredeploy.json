@@ -228,7 +228,7 @@
                                                     "type": "AppendToStringVariable",
                                                     "inputs": {
                                                         "name": "emailstring",
-                                                        "value": "@items('For_each_3')?['mail']"
+                                                        "value": "@{items('For_each_3')?['mail']};"
                                                     }
                                                 }
                                             },
@@ -326,15 +326,51 @@
                                         "uri": "https://management.azure.com/subscriptions/@{items('For_each')?['SubscriptionId']}/providers/Microsoft.Authorization/roleAssignments?api-version=2015-07-01"
                                     }
                                 },
+                                "Reset_Img_null": {
+                                    "runAfter": {
+                                        "Send_an_email_(V2)_2": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "img",
+                                        "value": "@{null}"
+                                    }
+                                },
+                                "Reset_emailstring_null": {
+                                    "runAfter": {
+                                        "Reset_Img_null": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "emailstring",
+                                        "value": "@{null}"
+                                    }
+                                },
+                                "Reset_simpleassignarray_null": {
+                                    "runAfter": {
+                                        "Reset_emailstring_null": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "simpleassignarray",
+                                        "value": []
+                                    }
+                                },
                                 "SecureScoreRankingsViz": {
                                     "runAfter": {
-                                        "Set_variable": [
+                                        "Set_img_variable": [
                                             "Succeeded"
                                         ]
                                     },
                                     "type": "ApiConnection",
                                     "inputs": {
-                                        "body": "SecureScoreControls_CL\n| where SubscriptionId contains \"@{items('For_each')?['SubscriptionId']}\"\n| extend SubscriptionId = tostring(split(id_s, \"/\", 2)[0]), SecurityControl = properties_displayName_s\n| where properties_score_max_d != 0\n| join kind = leftouter (Subscriptions_CL) \non $left.SubscriptionId == $right.SubscriptionId\n| summarize by Subscription = displayName_s, ScorePercent = round((round(properties_score_current_d, 0)*100)/properties_score_max_d, 0), SecurityControl\n| where ScorePercent != 100\n| sort by Subscription asc , ScorePercent desc",
+                                        "body": "SecureScoreControls_CL\n| extend SubscriptionId = tostring(split(id_s, \"/\", 2)[0]), SecurityControl = properties_displayName_s\n| where SubscriptionId contains \"@{items('For_each')?['SubscriptionId']}\"\n| where properties_score_max_d != 0\n| join kind = leftouter (Subscriptions_CL) \non $left.SubscriptionId == $right.SubscriptionId\n| summarize by Subscription = displayName_s, ScorePercent = round((round(properties_score_current_d, 0)*100)/properties_score_max_d, 0), SecurityControl\n| where ScorePercent != 100\n| sort by Subscription asc , ScorePercent desc",
                                         "host": {
                                             "connection": {
                                                 "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
@@ -360,7 +396,7 @@
                                     },
                                     "type": "ApiConnection",
                                     "inputs": {
-                                        "body": "SecureScore_CL\n| where SubscriptionId contains \"@{items('For_each')?['SubscriptionId']}\"\n| extend ScorePrecent = round((round(properties_score_current_d, 0)*100)/properties_score_max_d, 0), SubscriptionId = strcat(split(id_s, '/')[2])\n| join kind = leftouter (Subscriptions_CL) \non $left.SubscriptionId == $right.SubscriptionId\n| summarize by TimeGenerated, ScorePrecent, Subscription = displayName_s",
+                                        "body": "SecureScore_CL\n| extend ScorePrecent = round((round(properties_score_current_d, 0)*100)/properties_score_max_d, 0), SubscriptionId = strcat(split(id_s, '/')[2])\n| where SubscriptionId contains \"@{items('For_each')?['SubscriptionId']}\"\n| join kind = leftouter (Subscriptions_CL) \non $left.SubscriptionId == $right.SubscriptionId\n| summarize by TimeGenerated, ScorePrecent, Subscription = displayName_s",
                                         "host": {
                                             "connection": {
                                                 "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
@@ -407,7 +443,7 @@
                                         "path": "/v2/Mail"
                                     }
                                 },
-                                "Set_variable": {
+                                "Set_img_variable": {
                                     "runAfter": {
                                         "SecureScoreViz": [
                                             "Succeeded"
