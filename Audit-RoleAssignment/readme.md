@@ -17,7 +17,6 @@ Assign RBAC 'Reader' role to the Logic App at the MG or Subscription level. Assi
 Setup a KQL Alert:
 
 AzureActivity
-| where TimeGenerated >= ago(15m)
 | where OperationNameValue contains "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE"
 | where ActivityStatusValue contains "Success"
 | project Caller, CallerIpAddress, TimeGenerated, _ResourceId
