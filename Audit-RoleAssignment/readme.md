@@ -21,3 +21,5 @@ AzureActivity
 | where OperationNameValue contains "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE"
 | where ActivityStatusValue contains "Success"
 | project Caller, CallerIpAddress, TimeGenerated, _ResourceId
+
+In the action group enable common alert schema - https://docs.microsoft.com/en-us/azure/azure-monitor/platform/alerts-common-schema#how-do-i-enable-the-common-alert-schema
