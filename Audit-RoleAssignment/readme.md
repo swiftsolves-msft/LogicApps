@@ -1,7 +1,7 @@
 # Audit-RoleAssignment
 author: Nathan Swift
 
-This Logic App will webhook trigger from a ActivityLog Alert and read the Azure Role Assignment Write activity event and enrich the event with the actual Role Defintion, Scope, and AAD Object Details. It will then notify a team.
+This Logic App will webhook trigger from a ActivityLog Alert and read the Azure Role Assignment Write activity event and enrich the event with the actual Role Definition, Scope, and AAD Object Details. It will then notify a team.
 
 <a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fswiftsolves-msft%2FLogicApps%2Fmaster%2FAudit-RoleAssignment%2Fazuredeploy.json" target="_blank">
     <img src="https://aka.ms/deploytoazurebutton"/>
