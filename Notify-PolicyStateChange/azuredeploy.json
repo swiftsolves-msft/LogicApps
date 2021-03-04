@@ -1,0 +1,740 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "metadata":{
+        "comments": "This Logic App will trigger from a Azure resource policy health state change via eventgrid topic. Logic App will look up Azure Resource ActivityLog and Permissions and send an email accordingly with policy state change and infoirmation around the Azure Resource.",
+        "author": "Nathan Swift"
+    },    
+    "parameters": {
+        "LogicAppName": {
+            "defaultValue": "Notify-PolicyStateChange",
+            "type": "String"
+        },
+        "SendFrom": {
+            "defaultValue": "<username>@<domain>",
+            "type": "string"
+        },
+        "ComplianceEmail": {
+            "defaultValue": "sendtoemail@<domain>",
+            "type": "string"
+        },
+        "TenantID": {
+            "defaultValue": "<AAD TENANT ID GUID>",
+            "type": "string"
+        },
+        "TenantName": {
+            "defaultValue": "@SOMETHING.onmicrosoft.com",
+            "type": "string"
+        }
+    },
+    "variables": {
+        "office365ConnectionName": "[concat('office365-', parameters('LogicAppName'))]"       
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('office365ConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[parameters('SendFrom')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/office365')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('LogicAppName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "LogicAppsCategory": "Policy Insights"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', variables('office365ConnectionName'))]"
+            ],
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "RoleDefintionID": {
+                            "defaultValue": "b24988ac-6180-42a0-ab88-20f7382dd24c",
+                            "type": "String"
+                        },
+                        "TenantID": {
+                            "defaultValue": "[parameters('TenantID')]",
+                            "type": "String"
+                        },
+                        "TenantName": {
+                            "defaultValue": "[parameters('TenantName')]",
+                            "type": "String"
+                        },
+                        "complianceemail": {
+                            "defaultValue": "[parameters('ComplianceEmail')]",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "manual": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {}
+                        }
+                    },
+                    "actions": {
+                        "Create_HTML_table_Audits": {
+                            "runAfter": {
+                                "For_each_activityHTMLTable": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "Skipped",
+                                    "TimedOut"
+                                ]
+                            },
+                            "type": "Table",
+                            "inputs": {
+                                "format": "HTML",
+                                "from": "@variables('activityarray')"
+                            },
+                            "description": "HTML Table for activities to be used in email body for additional context"
+                        },
+                        "Create_HTML_table_Permissions": {
+                            "runAfter": {
+                                "For_each_PermissionsHTMLTable": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "Skipped",
+                                    "TimedOut"
+                                ]
+                            },
+                            "type": "Table",
+                            "inputs": {
+                                "format": "HTML",
+                                "from": "@variables('permissionsarray')"
+                            },
+                            "description": "generate a HTML table for body of email around permissions on Azure resource"
+                        },
+                        "Current_time": {
+                            "runAfter": {
+                                "Initialize_variable_activityarray": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Expression",
+                            "kind": "CurrentTime",
+                            "inputs": {},
+                            "description": "needed for Azure Activity API call date range to end"
+                        },
+                        "Filter_array": {
+                            "runAfter": {
+                                "GetAudits": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@body('GetAudits')?['value']",
+                                "where": "@equals(toLower(item()?['operationName']?['value']), variables('providerwriteaudit'))"
+                            },
+                            "description": "Filter the Azure Activities for only direct resource /write"
+                        },
+                        "Filter_array_2": {
+                            "runAfter": {
+                                "Initialize_variable_rolesemailstring": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@body('GetObjectsbyObjectIds')?['value']",
+                                "where": "@not(equals(item()?['mail'], null))"
+                            },
+                            "description": "filter out owners and contributors that do not have an email address."
+                        },
+                        "For_each": {
+                            "foreach": "@body('Filter_array')",
+                            "actions": {
+                                "Condition": {
+                                    "actions": {
+                                        "Append_to_string_variable": {
+                                            "runAfter": {},
+                                            "type": "AppendToStringVariable",
+                                            "inputs": {
+                                                "name": "activecallersemailaddress",
+                                                "value": "@{items('For_each')?['caller']}; "
+                                            },
+                                            "description": "append the unique email address to string variable to be used in TO: of sending email"
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "contains": [
+                                                    "",
+                                                    "@"
+                                                ]
+                                            },
+                                            {
+                                                "not": {
+                                                    "contains": [
+                                                        "@variables('activecallersemailaddress')",
+                                                        ""
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "type": "If",
+                                    "description": "Conditional check prevents same email address from being appended to TO: email address string variable"
+                                }
+                            },
+                            "runAfter": {
+                                "Filter_array": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach",
+                            "description": "Running through Array of /write Azure Activities. Check if email address is unique and append to a sting var to be used in To: to send email"
+                        },
+                        "For_each_2": {
+                            "foreach": "@body('GetRoleAssignments')?['value']",
+                            "actions": {
+                                "Append_to_array_variable": {
+                                    "runAfter": {},
+                                    "type": "AppendToArrayVariable",
+                                    "inputs": {
+                                        "name": "simpleassignarray",
+                                        "value": "@items('For_each_2')?['properties']?['principalId']"
+                                    },
+                                    "description": "place ObjectIDs into an array"
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variable_simpleassignarray": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach",
+                            "description": "Run through and collect only the ObjectIDs with assignments on Azure Resource."
+                        },
+                        "For_each_3": {
+                            "foreach": "@body('Filter_array_2')",
+                            "actions": {
+                                "Append_to_string_variable_2": {
+                                    "runAfter": {},
+                                    "type": "AppendToStringVariable",
+                                    "inputs": {
+                                        "name": "rolesemailstring",
+                                        "value": "@{items('For_each_3')?['mail']};"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Filter_array_2": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach",
+                            "description": "add only owner and contributor email addresses to send in an email."
+                        },
+                        "For_each_PermissionsHTMLTable": {
+                            "foreach": "@body('GetRoleAssignments')?['value']",
+                            "actions": {
+                                "Append_to_array_variable_2": {
+                                    "runAfter": {
+                                        "GetObjectInfo": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "AppendToArrayVariable",
+                                    "inputs": {
+                                        "name": "permissionsarray",
+                                        "value": {
+                                            "DisplayName": "@{body('GetObjectInfo')?['value'][0]?['displayName']}",
+                                            "ObjectID": "@{items('For_each_PermissionsHTMLTable')?['properties']?['principalId']}",
+                                            "Role": "@{body('GetRoleDefId')?['properties']?['roleName']}",
+                                            "Scope": "@{items('For_each_PermissionsHTMLTable')?['properties']?['scope']}"
+                                        }
+                                    },
+                                    "description": "add each custom body of role permission properties into an array"
+                                },
+                                "GetObjectInfo": {
+                                    "runAfter": {
+                                        "GetRoleDefId": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://graph.microsoft.com",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                            "ids": [
+                                                "@{items('For_each_PermissionsHTMLTable')?['properties']?['principalId']}"
+                                            ]
+                                        },
+                                        "method": "POST",
+                                        "uri": "https://graph.microsoft.com/v1.0/directoryObjects/getByIds"
+                                    },
+                                    "description": "for each role assignment lookup the AAD object properties"
+                                },
+                                "GetRoleDefId": {
+                                    "runAfter": {},
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "method": "GET",
+                                        "uri": "https://management.azure.com/@{items('For_each_PermissionsHTMLTable')?['properties']?['roleDefinitionId']}?api-version=2015-07-01"
+                                    },
+                                    "description": "each role assignment look up role definition"
+                                }
+                            },
+                            "runAfter": {
+                                "For_each_3": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach",
+                            "description": "Go through role assignments on Azure resource and build a simplified HTML table for premissions"
+                        },
+                        "For_each_activityHTMLTable": {
+                            "foreach": "@body('GetAudits')?['value']",
+                            "actions": {
+                                "Append_to_array_variable_3": {
+                                    "runAfter": {},
+                                    "type": "AppendToArrayVariable",
+                                    "inputs": {
+                                        "name": "activityarray",
+                                        "value": {
+                                            "APICall": "@{items('For_each_activityHTMLTable')?['operationName']?['value']}",
+                                            "Caller": "@{items('For_each_activityHTMLTable')?['caller']}",
+                                            "DateTime UTC": "@{items('For_each_activityHTMLTable')?['eventTimestamp']}",
+                                            "IpAddress": "@{items('For_each_activityHTMLTable')?['claims']?['ipaddr']}",
+                                            "OperationName": "@{items('For_each_activityHTMLTable')?['operationName']?['localizedValue']}"
+                                        }
+                                    },
+                                    "description": "inserting each activity as a custom object into an array for HTML Table build for activities"
+                                }
+                            },
+                            "runAfter": {
+                                "For_each": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach",
+                            "description": "Running through Array of /write Azure Activities"
+                        },
+                        "GetAudits": {
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "method": "GET",
+                                "uri": "https://management.azure.com/subscriptions/@{triggerBody()[0]?['data']?['subscriptionId']}/providers/microsoft.insights/eventtypes/management/values?%24filter=eventTimestamp%20ge%20'@{body('Get_past_time')}'%20and%20eventTimestamp%20le%20'@{body('Current_time')}'%20and%20resourceUri%20eq%20'@{triggerBody()[0]?['subject']}'&api-version=2015-04-01"
+                            },
+                            "description": "Azure Activity API call to get audit logs for last 7 days on particular resource in ASC recommendation"
+                        },
+                        "GetObjectsbyObjectIds": {
+                            "runAfter": {
+                                "For_each_2": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://graph.windows.net/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                    "includeDirectoryObjectReferences": true,
+                                    "objectIds": "@variables('simpleassignarray')",
+                                    "types": [
+                                        "user"
+                                    ]
+                                },
+                                "method": "POST",
+                                "uri": "https://graph.windows.net/@{parameters('TenantID')}/getObjectsByObjectIds?api-version=1.6"
+                            },
+                            "description": "using the objectids of just users look up user property information"
+                        },
+                        "GetPolicyDefID": {
+                            "runAfter": {
+                                "Get_past_time": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com/",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "method": "GET",
+                                "uri": "https://management.azure.com/@{triggerBody()[0]?['data']?['policyDefinitionId']}?api-version=2020-09-01"
+                            },
+                            "description": "Look up Azure policy Definition ID for details like displayname, description and others to be used in email notification"
+                        },
+                        "GetRoleAssignments": {
+                            "runAfter": {
+                                "Create_HTML_table_Audits": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://management.azure.com",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "method": "GET",
+                                "uri": "https://management.azure.com/@{triggerBody()[0]?['subject']}/providers/Microsoft.Authorization/roleAssignments?api-version=2018-09-01-preview"
+                            },
+                            "description": "Get role assignments for the Azure resource with AAD ObjectID and scope"
+                        },
+                        "Get_past_time": {
+                            "runAfter": {
+                                "Current_time": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Expression",
+                            "kind": "GetPastTime",
+                            "inputs": {
+                                "interval": 7,
+                                "timeUnit": "Day"
+                            },
+                            "description": "needed for Azure Activity API call date range to start"
+                        },
+                        "Initialize_variable_activecallersemailaddress": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "activecallersemailaddress",
+                                        "type": "string",
+                                        "value": "@{null}"
+                                    }
+                                ]
+                            },
+                            "description": "TO email address variable that will combine unique email addresses later to send from the Callers that made /write"
+                        },
+                        "Initialize_variable_activityarray": {
+                            "runAfter": {
+                                "Initialize_variable_permissionsarray": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "activityarray",
+                                        "type": "array",
+                                        "value": []
+                                    }
+                                ]
+                            },
+                            "description": "used in collecting the data to be created in HTMLTable for activities"
+                        },
+                        "Initialize_variable_infraascodelink": {
+                            "runAfter": {
+                                "Initialize_variable_resourcelink": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "infraascodelink",
+                                        "type": "string",
+                                        "value": "<a href=\"https://portal.azure.com/#@{parameters('TenantName')}/resource/@{triggerBody()[0]?['subject']}/exporttemplate\">Click for Azure Export Template: @{first(skip(split(triggerBody()[0]?['subject'],'/'),8))} </a>"
+                                    }
+                                ]
+                            },
+                            "description": "URL link to Azure resource export template in Azure portal used in email body for investigation"
+                        },
+                        "Initialize_variable_permissionsarray": {
+                            "runAfter": {
+                                "Initialize_variable_infraascodelink": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "permissionsarray",
+                                        "type": "array",
+                                        "value": []
+                                    }
+                                ]
+                            },
+                            "description": "used in collecting the data to be created in HTMLTable for permissions"
+                        },
+                        "Initialize_variable_providerwriteaudit": {
+                            "runAfter": {
+                                "Initialize_variable_activecallersemailaddress": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "providerwriteaudit",
+                                        "type": "string",
+                                        "value": "@{concat(first(skip(split(triggerBody()[0]?['subject'],'/'),6)), '/', first(skip(split(triggerBody()[0]?['subject'],'/'),7)), '/write')}"
+                                    }
+                                ]
+                            },
+                            "description": "Provider variable used later in filter array checking, to ensure we only get direct resource /write"
+                        },
+                        "Initialize_variable_resourcelink": {
+                            "runAfter": {
+                                "Initialize_variable_providerwriteaudit": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "resourcelink",
+                                        "type": "string",
+                                        "value": "<a href=\"https://portal.azure.com/#@{parameters('TenantName')}/resource/@{triggerBody()[0]?['subject']}/overview\">Click for Azure Resource: @{first(skip(split(triggerBody()[0]?['subject'],'/'),8))} </a>"
+                                    }
+                                ]
+                            },
+                            "description": "URL link to Azure resource in Azure portal used in email body for investigation"
+                        },
+                        "Initialize_variable_rolesemailstring": {
+                            "runAfter": {
+                                "GetObjectsbyObjectIds": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "rolesemailstring",
+                                        "type": "string",
+                                        "value": "@{null}"
+                                    }
+                                ]
+                            },
+                            "description": "variable to hold owner and contributor email addresses"
+                        },
+                        "Initialize_variable_simpleassignarray": {
+                            "runAfter": {
+                                "GetRoleAssignments": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "simpleassignarray",
+                                        "type": "array",
+                                        "value": []
+                                    }
+                                ]
+                            },
+                            "description": "will be used to collect the AAD Objects with Owner and contributor permissions that have email addresses"
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "GetPolicyDefID": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('GetPolicyDefID')",
+                                "schema": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "properties": {
+                                            "properties": {
+                                                "displayName": {
+                                                    "type": "string"
+                                                },
+                                                "metadata": {
+                                                    "properties": {
+                                                        "category": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdBy": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdOn": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedBy": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedOn": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "mode": {
+                                                    "type": "string"
+                                                },
+                                                "parameters": {
+                                                    "properties": {
+                                                        "tagName": {
+                                                            "properties": {
+                                                                "metadata": {
+                                                                    "properties": {
+                                                                        "description": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "displayName": {
+                                                                            "type": "string"
+                                                                        }
+                                                                    },
+                                                                    "type": "object"
+                                                                },
+                                                                "type": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "type": "object"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "policyRule": {
+                                                    "properties": {
+                                                        "if": {
+                                                            "properties": {
+                                                                "exists": {
+                                                                    "type": "string"
+                                                                },
+                                                                "field": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "type": "object"
+                                                        },
+                                                        "then": {
+                                                            "properties": {
+                                                                "details": {
+                                                                    "items": {
+                                                                        "properties": {
+                                                                            "field": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "value": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "field",
+                                                                            "value"
+                                                                        ],
+                                                                        "type": "object"
+                                                                    },
+                                                                    "type": "array"
+                                                                },
+                                                                "effect": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "type": "object"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "policyType": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "type": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            },
+                            "description": "Helps with parsing values "
+                        },
+                        "Send_an_email_(V2)": {
+                            "runAfter": {
+                                "Create_HTML_table_Permissions": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "Body": "<p>Azure Policy State Change - details below:<br>\n<br>\nResource Type: @{concat(first(skip(split(triggerBody()[0]?['subject'],'/'),7)), '/', first(skip(split(triggerBody()[0]?['subject'],'/'),8)))}<br>\n<br>\nResource Status: @{triggerBody()[0]?['data']?['complianceState']}<br>\n<br>\nPolicy name: @{body('Parse_JSON')?['properties']?['displayName']}<br>\n<br>\nPolicy Description: @{body('GetPolicyDefID')?['properties']?['description']}<br>\n<br>\nPolicy Type: @{body('Parse_JSON')?['properties']?['policyType']}<br>\n<br>\nPolicy Category: @{body('Parse_JSON')?['properties']?['metadata']?['category']}<br>\n<br>\n@{variables('resourcelink')}<br>\n<br>\n@{variables('infraascodelink')}<br>\n<br>\n<strong>Last 7 Days Audit Table on Azure Resource:</strong><br>\n@{body('Create_HTML_table_Audits')}<br>\n<br>\n<strong>Resource Permissions Table:</strong><br>\n@{body('Create_HTML_table_Permissions')}</p>",
+                                    "Importance": "High",
+                                    "Subject": "Azure Policy State Change - @{body('Parse_JSON')?['properties']?['displayName']} - @{concat(first(skip(split(triggerBody()[0]?['subject'],'/'),7)), '/', first(skip(split(triggerBody()[0]?['subject'],'/'),8)))}",
+                                    "To": "@{parameters('complianceemail')};@{variables('activecallersemailaddress')};@{variables('rolesemailstring')}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['office365']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/v2/Mail"
+                            },
+                            "description": "Send an email to compliance team, people who created or modified Azure resource in last 7 days, and Azure resource owner and contributors."
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "office365": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('office365ConnectionName'))]",
+                                "connectionName": "office365",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/office365')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
