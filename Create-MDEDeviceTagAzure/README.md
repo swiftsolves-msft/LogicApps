@@ -9,8 +9,11 @@ NOTES:
 In the deployment set the paramater to the Tag you want to be applied
 
 In the deployment set the paramater to how matching occurs
+
 name - match by server name between Azure and MDE
+
 namepriv - match by server name and private ip address
+
 nameprivpublic - match by server name, private ip address, and public ip address
 
 <a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fswiftsolves-msft%2FLogicApps%2Fmaster%2FCreate-MDEDeviceTagAzure%2Fazuredeploy.json" target="_blank">
