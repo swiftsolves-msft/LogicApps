@@ -8,7 +8,7 @@ NOTES:
 
 In the deployment set the paramater to the Tag you want to be applied
 
-In the deployment set the paramater to how matching occurs
+In the deployment set the paramater to how matching occurs:
 
 _name - match by server name between Azure and MDE_
 
