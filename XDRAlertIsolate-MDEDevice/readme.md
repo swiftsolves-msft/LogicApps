@@ -19,4 +19,4 @@ The following Logic App is designed to poll Security Graph frequently 1 minute f
 
 ## After Deployment
 
-- Grant the Logic App Managed Identity access to the Microsoft Graph SecurityEvents.Read.All & Machine.Isolate & AdvancedQuery.Read.All which can be done with the included PowerShell script [AddApiPermissions.ps1](https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Solutions/Standalone/Playbooks/Add-IP-Entity-To-Named-Location/AddApiPermissions.ps1)
+- Grant the Logic App Managed Identity access to the Microsoft Graph SecurityEvents.Read.All & Machine.Isolate & AdvancedQuery.Read.All which can be done with the included PowerShell script [AddApiPermissions.ps1](https://raw.githubusercontent.com/swiftsolves-msft/LogicApps/master/XDRAlertIsolate-MDEDevice/AddApiPermissions.ps1)
